@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>二维码统计系统</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        .dark-mode {
+            background: #121212;
+            color: #e0e0e0;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto; /* 居中显示 */
+            padding: 0 20px; /* 左右留白 */
+        }
+
+        .toolbar {
+            margin: 15px 0;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        textarea {
+            width: 100%;
+            height: 200px;
+            font-family: 'Courier New', monospace;
+            margin: 15px 0;
+            padding: 10px;
+            border: 2px solid #007bff;
+            border-radius: 4px;
+            background: #f8f9fa;
+            ime-mode: inactive; /* 推荐浏览器禁用输入法 */
+            inputmode: latin;   /* 推荐使用拉丁输入模式 */
+            box-sizing: border-box; /* 确保宽度包含内边距 */
+        }
+
+        .dark-mode textarea {
+            background: #2d2d2d;
+            border-color: #1e90ff;
+            color: #ffffff;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        th, td {
+            padding: 8px; /* 缩小行距1/4 */
+            border: 1px solid #dee2e6;
+            text-align: left;
+        }
+
+        th {
+            background: #007bff;
+            color: white;
+            font-weight: bold;
+        }
+
+        .dark-mode th {
+            background: #1a5a99;
+            border-color: #495057;
+        }
+
+        .time-info {
+            margin: 10px 0;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .dark-mode .time-info {
+            color: #aaa;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            background: #0056b3;
+            transform: scale(1.05);
+        }
+
+        button.clear-btn {
+            background: #dc3545;
+        }
+
+        button.clear-btn:hover {
+            background: #c82333;
+        }
+
+        .alert-box {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            background: #ffeb3b;
+            color: #000;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            animation: slideDown 0.5s ease-out;
+        }
+
+        @keyframes slideDown {
+            from { top: -50px; opacity: 0; }
+            to { top: 20px; opacity: 1; }
+        }
+
+        .alert-box button {
+            margin-left: 20px;
+            padding: 5px 10px;
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        @media print {
+            .no-print, textarea, button {
+                display: none !important;
+            }
+            
+            table {
+                box-shadow: none;
+                border: 2px solid #000;
+            }
+            
+            th {
+                background: #fff !important;
+                color: #000 !important;
+                border: 2px solid #000;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 class="no-print">二维码统计系统</h2>
+        <div class="toolbar no-print">
+            <button onclick="toggleTheme()">切换主题</button>
+            <button onclick="window.print()">打印报表</button>
+            <button onclick="saveData()">保存数据</button>
+            <button onclick="loadData()">加载数据</button>
+            <button onclick="downloadCSV()">下载汇总数据</button>
+        </div>
+        
+        <div class="time-info">
+            当前时间：<span id="currentTime"></span>
+        </div>
+
+        <textarea id="inputData" 
+                  placeholder="请粘贴条码数据（每行一条）"
+                  lang="en"
+                  inputmode="text"></textarea>
+
+        <div class="toolbar no-print">
+            <button class="clear-btn" onclick="clearInput()">清除数据</button>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>名称</th>
+                    <th>箱数</th>
+                    <th>总数</th>
+                </tr>
+            </thead>
+            <tbody id="outputTable"></tbody>
+            <tfoot id="summaryRow"></tfoot> <!-- 新增汇总行 -->
+        </table>
+    </div>
+
+    <script>
+        // 页面加载提示
+        function showInputMethodAlert() {
+            const alertBox = document.createElement('div');
+            alertBox.className = 'alert-box';
+            alertBox.innerHTML = `
+                请切换为英文输入法（推荐使用大写锁定模式）
+                <button onclick="this.parentElement.remove()">关闭</button>
+            `;
+            document.body.appendChild(alertBox);
+            
+            setTimeout(() => {
+                if (alertBox.parentElement) {
+                    alertBox.remove();
+                }
+            }, 5000);
+        }
+
+        window.addEventListener('load', showInputMethodAlert);
+
+        // 初始化时间显示（去掉秒）
+        function updateTime() {
+            const now = new Date();
+            const timeString = now.toLocaleString('zh-CN', { 
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            document.getElementById('currentTime').textContent = timeString;
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // 主题切换
+        function toggleTheme() {
+            document.body.classList.toggle('dark-mode');
+        }
+
+        // 清除输入
+        function clearInput() {
+            if (confirm('确定要清除所有输入数据吗？')) {
+                document.getElementById("inputData").value = '';
+                document.getElementById("outputTable").innerHTML = '';
+                document.getElementById("summaryRow").innerHTML = ''; // 清空汇总行
+            }
+        }
+
+        // 数据处理
+        function processData() {
+            const input = document.getElementById("inputData").value.trim();
+            const dataMap = new Map();
+            const seenLines = new Set();
+            let totalCount = 0; // 总箱数
+            let totalSum = 0;   // 总数汇总
+            
+            input.split("\n").forEach(line => {
+                const trimmedLine = line.trim();
+                if (!trimmedLine) return;
+                
+                if (seenLines.has(trimmedLine)) return;
+                seenLines.add(trimmedLine);
+
+                try {
+                    const [mainPart] = trimmedLine.split(';');
+                    const [key, valueStr] = mainPart.split('*');
+                    const value = parseInt(valueStr);
+                    
+                    if (!isNaN(value)) {
+                        if (dataMap.has(key)) {
+                            const entry = dataMap.get(key);
+                            entry.count++;
+                            entry.total += value;
+                        } else {
+                            dataMap.set(key, new DataEntry(value));
+                        }
+                        totalCount++;
+                        totalSum += value;
+                    }
+                } catch (error) {
+                    console.warn('无效数据格式:', line);
+                }
+            });
+
+            updateTable(dataMap, totalCount, totalSum);
+        }
+
+        // 数据存储类
+        class DataEntry {
+            constructor(value) {
+                this.count = 1;
+                this.total = value;
+            }
+        }
+
+        // 更新表格
+        function updateTable(dataMap, totalCount, totalSum) {
+            const tbody = document.getElementById("outputTable");
+            tbody.innerHTML = Array.from(dataMap)
+                .map(([key, data]) => `
+                    <tr>
+                        <td>${key}</td>
+                        <td>${data.count}</td>
+                        <td>${data.total}</td>
+                    </tr>
+                `)
+                .join('');
+
+            // 更新汇总行
+            const summaryRow = document.getElementById("summaryRow");
+            summaryRow.innerHTML = `
+                <tr style="background: #f0f0f0;">
+                    <td><strong>汇总</strong></td>
+                    <td><strong>${totalCount}</strong></td>
+                    <td><strong>${totalSum}</strong></td>
+                </tr>
+            `;
+        }
+
+        // 数据保存
+        function saveData() {
+            const data = {
+                input: document.getElementById("inputData").value,
+                timestamp: new Date().getTime()
+            };
+            localStorage.setItem('barcodeData', JSON.stringify(data));
+            alert('数据已保存！');
+        }
+
+        // 数据加载
+        function loadData() {
+            const data = JSON.parse(localStorage.getItem('barcodeData'));
+            if (data) {
+                if (confirm('是否加载已保存的数据？')) {
+                    document.getElementById("inputData").value = data.input;
+                    processData();
+                }
+            } else {
+                alert('没有找到保存的数据');
+            }
+        }
+
+        // 下载CSV文件
+        function downloadCSV() {
+            const rows = document.querySelectorAll("#outputTable tr");
+            if (rows.length === 0) {
+                alert('没有可导出的数据');
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+            const headers = ["名称", "箱数", "总数"];
+            csvContent += headers.join(",") + "\n";
+
+            rows.forEach(row => {
+                const cols = row.querySelectorAll("td");
+                const rowData = Array.from(cols).map(col => col.textContent);
+                csvContent += rowData.join(",") + "\n";
+            });
+
+            // 添加汇总行
+            const summary = document.querySelector("#summaryRow td");
+            if (summary) {
+                const summaryData = Array.from(summary.parentElement.querySelectorAll("td"))
+                    .map(td => td.textContent);
+                csvContent += summaryData.join(",") + "\n";
+            }
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `二维码统计_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // 实时处理输入
+        document.getElementById("inputData").addEventListener('input', processData);
+    </script>
+</body>
+</html>
